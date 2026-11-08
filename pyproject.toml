@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "muse-wechat-gateway"
+version = "0.1.0"
+description = "微信 ilink 消息网关：长轮询、任务认领、媒体和提醒"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+]
+
+[project.optional-dependencies]
+media = ["pycryptodome", "Pillow"]
+
+[project.scripts]
+muse-wechat = "muse_wechat.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

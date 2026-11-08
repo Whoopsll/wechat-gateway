@@ -1,0 +1,5 @@
+include .env.example
+include muse_wechat.py
+include *.html
+recursive-include hooks *.sh
+recursive-include tests *.py
