@@ -56,8 +56,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(claims.hold(batch["claim_id"], 300), "ok")
         with patch.object(messages, "_post_text") as send:
             self.assertEqual(messages.say(batch["claim_id"], "收到"), "ok")
-            self.assertEqual(messages.send_reply(batch["reply_to"], "chat-A", "你好呀"), "ok")
-            self.assertEqual(messages.send_reply(batch["reply_to"], "chat-A", "你好呀"), "already_replied")
+            self.assertEqual(messages.send_reply(batch["reply_to"], "chat-A", "你好呀", claim_id=batch["claim_id"]), "ok")
+            self.assertEqual(messages.send_reply(batch["reply_to"], "chat-A", "你好呀", claim_id=batch["claim_id"]), "already_replied")
             self.assertEqual(send.call_count, 2)
         self.assertEqual(claims.heartbeat(batch["claim_id"]), "done")
         self.assertIsNone(claims.claim_batch())

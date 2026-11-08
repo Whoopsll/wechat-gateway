@@ -1,7 +1,9 @@
 """SQLite 存储、同步游标和会话上下文。"""
 
 import json
+import os
 import sqlite3
+import tempfile
 import threading
 from .config import CTX_TOKEN_FILE, DB_PATH, SYNC_FILE
 
@@ -39,8 +41,19 @@ def get_updates_buf():
         return ""
 
 def save_updates_buf(buf):
-    with open(SYNC_FILE, "w") as f:
-        json.dump({"get_updates_buf": buf}, f)
+    """原子替换游标文件，写入失败时保留原文件。"""
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(SYNC_FILE),
+                                         prefix=".sync-", suffix=".tmp", delete=False) as f:
+            tmp = f.name
+            json.dump({"get_updates_buf": buf}, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, SYNC_FILE)
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
 
 def file_ctx_token(user_id):
     """旧 OpenClaw 留下的 context_token，作兜底"""

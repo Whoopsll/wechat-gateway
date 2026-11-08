@@ -34,12 +34,13 @@ def poll_loop():
     if not acquire_single_instance_lock():
         print(f"[gateway] 已有网关在运行（见 {LOCK_PATH}），本进程退出", flush=True)
         sys.exit(0)
-    token = load_token()
     buf = get_updates_buf()
     threading.Thread(target=typing.run, daemon=True).start()
     print("[gateway] 启动：长轮询 + SQLite 去重 + 输入状态保活", flush=True)
     while True:
         try:
+            # 同一账号重登后下一轮直接采用新凭据；读取失败也进入重试路径。
+            token = load_token()
             resp = api_post("/ilink/bot/getupdates",
                             {"get_updates_buf": buf, "base_info": base_info(), "token": token},
                             token, timeout=40)
@@ -47,14 +48,21 @@ def poll_loop():
                 print(f"[warn] getupdates ret={resp.get('ret')}", flush=True)
                 time.sleep(5)
                 continue
+            batch_failed = False
             for msg in resp.get("msgs", []):
                 try:
                     on_wechat_message(msg)
                 except Exception as e:
+                    batch_failed = True
                     print(f"[error] msg handler: {e}", flush=True)
-            # 消息落库之后再推进游标，崩溃也不丢消息
-            buf = resp.get("get_updates_buf", buf)
-            save_updates_buf(buf)
+            if batch_failed:
+                print("[warn] batch incomplete; keeping updates cursor for replay", flush=True)
+                time.sleep(5)
+                continue
+            # 全批成功才推进；先持久化，再更新内存，保存失败时也从原游标重试。
+            next_buf = resp.get("get_updates_buf", buf)
+            save_updates_buf(next_buf)
+            buf = next_buf
         except Exception as e:
             print(f"[error] poll: {e}", flush=True)
             time.sleep(5)

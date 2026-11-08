@@ -29,9 +29,11 @@ else
   内容
   EOF
 - 最后一条（必须有，结束本批）：
-  GW reply <reply_to> <chat_id> <<'EOF'
+  GW reply <reply_to> <chat_id> --claim-id <claim_id> <<'EOF'
   内容
   EOF
+
+  --claim-id 必填，使用当前这批 payload 的 claim_id。旧代次返回 superseded 时立即停下。
 
 【发文件/图片到微信】20MB 以内优先直接发微信，图片会按图片发，其他按文件发：
   GW send_file <claim_id> 文件路径

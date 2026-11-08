@@ -50,9 +50,16 @@ class MigrationTests(unittest.TestCase):
                     self.assertNotIn(node.name, migrated, f"重复定义：{node.name}")
                     migrated[node.name] = ast.dump(node)
         self.assertGreater(len(original), 80)
-        self.assertEqual(original.keys(), migrated.keys())
-        # 解析器已修复正文 HTTP/ 误识别，不能再要求与含 bug 的快照完全相同。
-        # 其余定义仍逐一对比，避免顺带修改无关业务逻辑。
-        for name in original.keys() - {"_parse_curl_headers"}:
+        self.assertFalse(original.keys() - migrated.keys(), "原始定义不得遗漏")
+        self.assertEqual(migrated.keys() - original.keys(), {"CurlTransportError"})
+        fixed = {
+            "_parse_curl_headers",  # GW-5：正文边界
+            "_curl_request", "_sendmessage",  # GW-3：发送不确定性
+            "send_text", "send_reply",  # GW-1：认领代次
+            "on_wechat_message", "save_updates_buf",  # GW-2：入库与游标
+            "poll_loop",  # GW-2 / GW-4：重放和凭据刷新
+        }
+        # 已修复定义由专项回归覆盖；其余业务函数继续与原快照逐一对比。
+        for name in original.keys() - fixed:
             with self.subTest(name=name):
                 self.assertEqual(original[name], migrated[name])

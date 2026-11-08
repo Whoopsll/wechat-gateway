@@ -39,11 +39,19 @@ def on_wechat_message(msg):
         return
     ctx = msg.get("context_token") or ""
     now = time.time()
-    cur = db().execute("INSERT OR IGNORE INTO inbox(msg_id,chat_id,content,created_at,ctx_token) "
-                       "VALUES(?,?,?,?,?)", (mid, from_id, text, now, ctx))
+    conn = db()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute("INSERT OR IGNORE INTO inbox(msg_id,chat_id,content,created_at,ctx_token) "
+                           "VALUES(?,?,?,?,?)", (mid, from_id, text, now, ctx))
+        if cur.rowcount == 1:
+            conn.execute("INSERT INTO history VALUES(?,?,?,?)", (from_id, "user", text, now))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     if cur.rowcount != 1:
         return  # 重复消息，忽略
-    db().execute("INSERT INTO history VALUES(?,?,?,?)", (from_id, "user", text, now))
     print(f"[inbound] id={mid[:12]} from={from_id} body={text[:40]}", flush=True)
     threading.Thread(target=typing.start, args=(from_id, ctx or latest_ctx_token(from_id)),
                      daemon=True).start()

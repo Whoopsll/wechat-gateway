@@ -42,6 +42,17 @@ class _CIHeaders(dict):
                 return v
         return default
 
+class CurlTransportError(urllib.error.URLError):
+    """保留 curl 失败阶段；仍兼容下载调用方对 URLError 的捕获。"""
+    def __init__(self, code, detail):
+        self.curl_code = code
+        # 仅明确发生在 HTTP 请求发送前的错误允许自动重试。
+        # 接收失败、发送中断以及未知退出码均不能证明请求尚未送达。
+        self.request_may_have_been_sent = code not in {
+            1, 2, 3, 4, 5, 6, 7, 35, 51, 58, 59, 60, 77,
+        }
+        super().__init__(f"curl exit {code}: {detail}")
+
 def _parse_curl_headers(out):
     """解析 curl -i 的输出，返回 (status_code, _CIHeaders, body_bytes)。
     从头顺序消费代理 CONNECT 和 1xx 临时响应，读到最终响应后固定正文起点。
@@ -104,7 +115,7 @@ def _curl_request(method, url, headers=None, data=None, timeout=30):
     返回 (status_code, headers, body_bytes)。
     抛出的异常类型与原来 urllib 版本保持一致，调用方的 except 不用改：
       urllib.error.HTTPError  -> HTTP 4xx/5xx（.code / .headers 可用）
-      urllib.error.URLError   -> 连接失败（DNS、拒绝连接、SSL 等）
+      CurlTransportError      -> curl 传输失败（URLError 子类，含是否可能已发送）
       TimeoutError            -> 超时
       http.client.IncompleteRead -> 传了一半断开（curl exit 18），.partial 是已拿到的数据
     """
@@ -137,11 +148,8 @@ def _curl_request(method, url, headers=None, data=None, timeout=30):
         cl = resp_headers.get("Content-Length")
         expected = int(cl) - len(partial) if cl and cl.isdigit() else None
         raise http.client.IncompleteRead(partial, expected)
-    if rc in (6, 7, 35, 51, 52, 60):
-        # 6 解析失败 / 7 连接失败 / 35,51,52,60 各类 SSL/连接问题
-        raise urllib.error.URLError(f"curl exit {rc}: {err_tail}")
     if rc != 0:
-        raise urllib.error.URLError(f"curl exit {rc}: {err_tail}")
+        raise CurlTransportError(rc, err_tail)
     status, resp_headers, body = _parse_curl_headers(proc.stdout)
     if status >= 400:
         raise urllib.error.HTTPError(url, status, f"HTTP {status}",

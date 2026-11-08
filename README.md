@@ -83,13 +83,13 @@ set +a
 wechat-gateway poll
 ```
 
-凭据过期重登后，需要重启 `poll`；当前主循环会缓存启动时的 token。账号切换时也需要重新启动进程，让同步文件路径和账号一致。
+同一账号重登或刷新 token 后，`poll` 会在下一轮长轮询读取新凭据，不需要为 token 刷新单独重启；如果正在长轮询，则等当前请求结束后生效。账号切换或环境变量变化时仍需重新启动进程，让同步文件路径和账号一致。普通 API 仍采用配置的 `WECHAT_BASE_URL`，尚未动态采用凭据里的 `baseUrl`。
 
 `poll` 负责入库，worker 负责认领和回复。项目不包含独立的 AI worker 实现；原部署通过 Hatch hook 唤醒 worker。
 
 ## Worker 对接
 
-原脚本的命令参数保留，包括：
+命令示例（`reply` 现在必须显式提供当前批次的 `claim_id`）：
 
 ```bash
 wechat-gateway claim
@@ -97,12 +97,14 @@ wechat-gateway busy <claim_id>
 wechat-gateway hold <claim_id> 300
 wechat-gateway run <claim_id> -- python3 task.py
 wechat-gateway say <claim_id> '正在处理'
-wechat-gateway reply <reply_to> <chat_id> '处理完成'
+wechat-gateway reply <reply_to> <chat_id> --claim-id <claim_id> '处理完成'
 wechat-gateway wait_claim --session <首批claim_id> --seconds 40
 wechat-gateway send_file <claim_id> /absolute/path/to/file
 ```
 
 `hooks/wechat-inbound.sh` 需要 Hatch 提供 `HATCH_HOOK_RUNTIME`、`wake` 和 `silent`。设置 `WECHAT_GATEWAY_SCRIPT` 为本项目 `wechat_gateway.py` 的绝对路径、`WECHAT_PYTHON` 为虚拟环境解释器路径；worker 也要继承相同配置。这个 hook 不能在普通 shell 中独立唤醒 AI。
+
+`reply` 的 `--claim-id` 使用当前 payload 里的值；旧代次返回 `superseded`，不会发送或收尾新批次。缺少该参数的旧命令会报错并拒绝发送。部署此版本时必须同步更新 hook 和其他 worker 调用方，不能只更新 Python 包；建议让当前 worker 先结束，再切换 hook 与网关版本。
 
 ## 定时提醒
 
@@ -125,7 +127,7 @@ python3 -m unittest discover -s tests -v
 bash -n hooks/wechat-inbound.sh
 ```
 
-测试使用临时目录、临时 SQLite 和模拟的网络、邮件接口，不向真实微信或邮箱发送消息。其中迁移校验检查 HTML 中原有定义是否齐全，并逐一对比尚未修改的函数与类的语法树；已修复的解析器由 `tests/test_api.py` 覆盖。
+测试使用临时目录、临时 SQLite 和模拟的网络、邮件接口，不向真实微信或邮箱发送消息。其中迁移校验检查 HTML 中原有定义是否齐全，并逐一对比尚未修改的函数与类的语法树；已修复的定义由 `test_api.py`、`test_delivery.py`、`test_poll.py` 专项覆盖。
 
 ## HTTP 响应解析修复
 
@@ -135,15 +137,15 @@ bash -n hooks/wechat-inbound.sh
 
 更新部署副本后需要重启网关，再确认解析错误不再增长、积压消息实际入库、游标推进，并用新微信消息验证收发；本地离线测试不代表线上已恢复。
 
-## 本次迁移范围与已知问题
+## GW-1～GW-4 修复与部署说明
 
-本次只进行源码提取、模块拆分、入口和配置整理。保留原有业务函数及命令参数，新增环境变量配置、帮助入口和运行目录初始化。HTML 中提到的“148 项测试”未随文件提供，本项目没有将其计为已通过测试。
+本轮修复代码已写入仓库工作区，线上状态以 Muse 的独立验证报告和部署记录为准。没有修改既有数据库结构或凭据格式。
 
-此前审查发现的问题仍需后续修复：
+- **GW-1**：`reply` 的代次校验、心跳续期和防重占位在同一 SQLite 写事务中完成；收尾只更新显式提供的原 `claim_id`。网络调用期间不持有 SQLite 写锁。已经进入传输的请求无法撤回；如果此时手动解除认领或强行接管，收尾也不会误更新新代次。
+- **GW-2**：一批消息中任一处理失败，保留原游标，等待后重放；本轮其余消息仍可入库，重放由消息 ID 去重。`inbox` 和用户历史同事务提交。游标文件原子替换，保存成功后才更新内存游标。永久畸形消息会持续阻止该批游标前进并记录警告，需要人工排查；本轮没有自动跳过或清除消息。
+- **GW-3**：curl 错误携带是否可能已发出请求的信息。52/55/56、未知传输错误、超时、HTTP 408/5xx、响应解析失败等进入 `uncertain`，保留防重记录；明确的请求前失败、HTTP 拒绝和 API 非零 `ret` 可撤销占位后重试。`ret` 省略或为 null 的对象继续按原协议兼容成功处理。凭据读取失败发生在请求前，不会伪装成送达不确定。
+- **GW-4**：poll 每轮现读同一账号的 token，临时凭据读取失败也进入正常重试路径。
 
-- `reply` 未校验原认领身份，过期 worker 可能结束新 worker 的批次。
-- 消息处理失败后仍推进同步游标，可能丢消息。
-- 部分 curl 异常被当成明确发送失败，可能导致重发。
-- `poll` 缓存旧 token，重登后需重启；普通 API 也尚未采用凭据中的 `baseUrl`。
+`uncertain` 表示无法确认是否送达，不保证必达。文字回复、进度消息和提醒不自动补发；图片和文件保留原有的一次主动补发策略，仍可能收到两份，这次没有改变该产品取舍。CDN 上传重试也维持原行为。
 
-下一步可在各自模块逐项修复，并为修复增加针对性的回归测试。
+原始 HTML 仍是快照，其中“148 项测试”未随文件提供，不计入当前验证结果。本轮的测试可用上文命令重跑；生产部署须经用户确认，Muse 维护的 `test-reports/` 不纳入 Git。

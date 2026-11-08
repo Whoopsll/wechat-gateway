@@ -1,4 +1,4 @@
-"""兼容原脚本参数的命令入口。"""
+"""微信网关命令入口；reply 必须显式携带认领代次。"""
 
 import json
 import os
@@ -16,7 +16,7 @@ from .runner import run_with_heartbeat
 USAGE = ("用法: poll | claim | busy <claim_id> | hold <claim_id> <秒，最多600> | run <claim_id> -- <命令...>"
          " | send_file <claim_id> <路径>（20MB 以内，图片按图片发）"
          " | send_mail <claim_id> --to X --subject Y [-a 文件]... [--html]（正文从 stdin 读）"
-         " | say <claim_id> [text] | reply <reply_to> <chat_id> [text]（不给 text 则从 stdin 读）"
+         " | say <claim_id> [text] | reply <reply_to> <chat_id> --claim-id <claim_id> [text]（不给 text 则从 stdin 读）"
          " | unclaim <chat_id>（手动工具） | events [n]（查看异常事件）"
          " | login [--timeout-minutes N]（扫码登录/凭据过期重登，二维码写到 login-qr.png）"
          " | wait_claim --session <段落首批claim_id> --seconds 40（段落守窗：阻塞等下一批消息，整段封顶30分钟）"
@@ -35,9 +35,16 @@ def main(argv=None):
         poll_loop()
     elif len(a) == 2 and a[1] == "claim":
         print(json.dumps(claim_batch(), ensure_ascii=False))
-    elif len(a) in (4, 5) and a[1] == "reply":
-        text = a[4] if len(a) == 5 else sys.stdin.read()
-        print(send_reply(a[2], a[3], text))
+    elif a[1] == "reply":
+        import argparse
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py reply")
+        ap.add_argument("reply_to")
+        ap.add_argument("chat_id")
+        ap.add_argument("text", nargs="?")
+        ap.add_argument("--claim-id", required=True)
+        o = ap.parse_intermixed_args(a[2:])
+        text = o.text if o.text is not None else sys.stdin.read()
+        print(send_reply(o.reply_to, o.chat_id, text, claim_id=o.claim_id))
     elif len(a) in (3, 4) and a[1] == "say":
         text = a[3] if len(a) == 4 else sys.stdin.read()
         print(say(a[2], text))
