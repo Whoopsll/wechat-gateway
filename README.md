@@ -1,17 +1,17 @@
-# Muse 微信网关
+# WeChat Gateway
 
-从 `微信网关代码.html` 中提取的 Python 项目。HTML 保留为原始代码快照，后续修改以 `src/muse_wechat/` 为准。
+从 `微信网关代码.html` 中提取的 Python 项目。HTML 保留为原始代码快照，后续修改以 `src/wechat_gateway/` 为准。
 
 当前继续使用 Python、SQLite 和 curl。网关以 CLI 和长轮询工作，现阶段无需 Web 框架。以后增加 HTTP 接口或管理后台时，再单独加入 FastAPI。
 
 ## 项目结构
 
 ```text
-muse-wechat-gateway/
-├── pyproject.toml                 # 安装配置、可选依赖和 muse-wechat 命令
+wechat-gateway/
+├── pyproject.toml                 # 安装配置、可选依赖和 wechat-gateway 命令
 ├── .env.example                  # 环境变量示例
-├── muse_wechat.py                 # 兼容原来的脚本调用，也可免安装运行
-├── src/muse_wechat/
+├── wechat_gateway.py                 # 源码运行入口，无需安装包即可运行
+├── src/wechat_gateway/
 │   ├── cli.py                    # 命令分发
 │   ├── config.py                 # 配置和默认参数
 │   ├── storage.py                # SQLite、同步游标和 context_token
@@ -38,7 +38,7 @@ muse-wechat-gateway/
 运行环境：Linux、Python 3.11+、curl。现有实现使用 `fcntl.flock` 和进程组，不直接支持 Windows。
 
 ```bash
-cd muse-wechat-gateway
+cd wechat-gateway
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[media]'
@@ -53,7 +53,7 @@ cp .env.example .env
 set -a
 source .env
 set +a
-muse-wechat --help
+wechat-gateway --help
 ```
 
 `.env` 不自动加载。服务、定时器和 hook 都需要继承同一套环境变量。默认目录沿用旧部署路径，以便继续使用既有数据库和凭据；新部署可将两个目录改成项目内 `data/watch` 和 `data/accounts` 的绝对路径。CLI 会创建运行目录。
@@ -61,15 +61,15 @@ muse-wechat --help
 尚未安装包时，也可以从源码直接运行：
 
 ```bash
-python3 muse_wechat.py --help
+python3 wechat_gateway.py --help
 ```
 
-安装后也支持 `python -m muse_wechat`；三种入口使用相同的命令参数。
+安装后也支持 `python -m wechat_gateway`；三种入口使用相同的命令参数。
 
 ## 登录与收消息
 
 ```bash
-muse-wechat login
+wechat-gateway login
 ```
 
 使用手机微信扫描 `$WECHAT_WATCH_DIR/login-qr.png`，如提示配对码则在终端输入。成功后会打印归一化的账号 ID，凭据写入 `$WECHAT_STATE_DIR/<账号ID>.json`。
@@ -80,7 +80,7 @@ muse-wechat login
 set -a
 source .env
 set +a
-muse-wechat poll
+wechat-gateway poll
 ```
 
 凭据过期重登后，需要重启 `poll`；当前主循环会缓存启动时的 token。账号切换时也需要重新启动进程，让同步文件路径和账号一致。
@@ -92,26 +92,26 @@ muse-wechat poll
 原脚本的命令参数保留，包括：
 
 ```bash
-muse-wechat claim
-muse-wechat busy <claim_id>
-muse-wechat hold <claim_id> 300
-muse-wechat run <claim_id> -- python3 task.py
-muse-wechat say <claim_id> '正在处理'
-muse-wechat reply <reply_to> <chat_id> '处理完成'
-muse-wechat wait_claim --session <首批claim_id> --seconds 40
-muse-wechat send_file <claim_id> /absolute/path/to/file
+wechat-gateway claim
+wechat-gateway busy <claim_id>
+wechat-gateway hold <claim_id> 300
+wechat-gateway run <claim_id> -- python3 task.py
+wechat-gateway say <claim_id> '正在处理'
+wechat-gateway reply <reply_to> <chat_id> '处理完成'
+wechat-gateway wait_claim --session <首批claim_id> --seconds 40
+wechat-gateway send_file <claim_id> /absolute/path/to/file
 ```
 
-`hooks/wechat-inbound.sh` 需要 Hatch 提供 `HATCH_HOOK_RUNTIME`、`wake` 和 `silent`。设置 `WECHAT_GATEWAY_SCRIPT` 为本项目 `muse_wechat.py` 的绝对路径、`WECHAT_PYTHON` 为虚拟环境解释器路径；worker 也要继承相同配置。这个 hook 不能在普通 shell 中独立唤醒 AI。
+`hooks/wechat-inbound.sh` 需要 Hatch 提供 `HATCH_HOOK_RUNTIME`、`wake` 和 `silent`。设置 `WECHAT_GATEWAY_SCRIPT` 为本项目 `wechat_gateway.py` 的绝对路径、`WECHAT_PYTHON` 为虚拟环境解释器路径；worker 也要继承相同配置。这个 hook 不能在普通 shell 中独立唤醒 AI。
 
 ## 定时提醒
 
 有既往聊天记录后，可创建提醒：
 
 ```bash
-muse-wechat remind --chat-id <chat_id> --delay-seconds 600 --text '喝水啦'
-muse-wechat remind --chat-id <chat_id> --at '2026-11-09 15:00' --text '开会啦'
-muse-wechat dispatch_reminders
+wechat-gateway remind --chat-id <chat_id> --delay-seconds 600 --text '喝水啦'
+wechat-gateway remind --chat-id <chat_id> --at '2026-11-09 15:00' --text '开会啦'
+wechat-gateway dispatch_reminders
 ```
 
 `--at` 按北京时间解析。提醒写入 `$WECHAT_WATCH_DIR/reminders/`。必须由外部 cron 或 systemd timer 每分钟执行一次 `dispatch_reminders`；`poll` 本身不会派发提醒。本次拆分不安装任何系统定时任务。

@@ -17,7 +17,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from muse_wechat import claims, files, inbox, login, mail, messages, reminders, storage
+from wechat_gateway import claims, files, inbox, login, mail, messages, reminders, storage
 
 
 class WorkflowTests(unittest.TestCase):
@@ -39,9 +39,9 @@ class WorkflowTests(unittest.TestCase):
         )
 
     def test_all_modules_import(self):
-        for path in (ROOT / "src/muse_wechat").glob("*.py"):
+        for path in (ROOT / "src/wechat_gateway").glob("*.py"):
             if not path.name.startswith("__"):
-                importlib.import_module(f"muse_wechat.{path.stem}")
+                importlib.import_module(f"wechat_gateway.{path.stem}")
 
     def test_inbound_deduplicates_then_reply_finishes_batch(self):
         msg = {"message_id": "inbound-1", "from_user_id": "chat-A", "context_token": "ctx",
@@ -132,12 +132,12 @@ class WorkflowTests(unittest.TestCase):
         env = dict(os.environ, WECHAT_WATCH_DIR=str(self.root / "watch"),
                    WECHAT_STATE_DIR=str(self.root / "accounts"),
                    WECHAT_ACCOUNT_ID="offline-test", PYTHONPATH=str(ROOT / "src"))
-        for args in ((str(ROOT / "muse_wechat.py"), "--help"),
-                     ("-m", "muse_wechat", "--help")):
+        for args in ((str(ROOT / "wechat_gateway.py"), "--help"),
+                     ("-m", "wechat_gateway", "--help")):
             result = subprocess.run([sys.executable, *args], env=env, text=True, capture_output=True, check=True)
             self.assertIn("dispatch_reminders", result.stdout)
         self.assertFalse((self.root / "watch").exists())
-        result = subprocess.run([sys.executable, str(ROOT / "muse_wechat.py"), "claim"],
+        result = subprocess.run([sys.executable, str(ROOT / "wechat_gateway.py"), "claim"],
                                 env=env, text=True, capture_output=True, check=True)
         self.assertIsNone(json.loads(result.stdout))
         self.assertTrue((self.root / "watch/wechat.db").exists())

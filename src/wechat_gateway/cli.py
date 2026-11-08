@@ -25,7 +25,7 @@ USAGE = ("用法: poll | claim | busy <claim_id> | hold <claim_id> <秒，最多
          " | dispatch_reminders（派发到期提醒，主侧每分钟调用）")
 
 def main(argv=None):
-    a = ["muse-wechat", *(sys.argv[1:] if argv is None else argv)]
+    a = ["wechat-gateway", *(sys.argv[1:] if argv is None else argv)]
     if len(a) == 1 or a[1:] in (["--help"], ["-h"]):
         print(USAGE)
         return 0
@@ -47,7 +47,7 @@ def main(argv=None):
         print(send_file(a[2], a[3]))
     elif len(a) >= 3 and a[1] == "send_mail":
         import argparse
-        ap = argparse.ArgumentParser(prog="muse_wechat.py send_mail")
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py send_mail")
         ap.add_argument("claim_id")
         ap.add_argument("--to", required=True)
         ap.add_argument("--subject", required=True)
@@ -65,14 +65,14 @@ def main(argv=None):
         unclaim(a[2]); print("reset to pending")
     elif len(a) >= 2 and a[1] == "wait_claim":
         import argparse
-        ap = argparse.ArgumentParser(prog="muse_wechat.py wait_claim")
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py wait_claim")
         ap.add_argument("--session", required=True, help="段落首批的 claim_id，同一轮 worker 全程不变")
         ap.add_argument("--seconds", type=int, default=40, help="本次守窗秒数（1-120，默认 40）")
         o = ap.parse_args(a[2:])
         print(json.dumps(wait_claim(o.session, o.seconds), ensure_ascii=False))
     elif len(a) >= 2 and a[1] == "notify":
         import argparse
-        ap = argparse.ArgumentParser(prog="muse_wechat.py notify")
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py notify")
         ap.add_argument("chat_id")
         ap.add_argument("--key", default=None)
         ap.add_argument("text", nargs="?")
@@ -85,7 +85,7 @@ def main(argv=None):
             sys.exit(1)
     elif len(a) >= 2 and a[1] == "remind":
         import argparse
-        ap = argparse.ArgumentParser(prog="muse_wechat.py remind")
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py remind")
         ap.add_argument("--chat-id", required=True)
         ap.add_argument("--delay-seconds", type=int, default=None)
         ap.add_argument("--at", default=None)
@@ -102,7 +102,7 @@ def main(argv=None):
         print(json.dumps(dispatch_reminders(), ensure_ascii=False))
     elif len(a) >= 2 and a[1] == "login":
         import argparse
-        ap = argparse.ArgumentParser(prog="muse_wechat.py login")
+        ap = argparse.ArgumentParser(prog="wechat_gateway.py login")
         ap.add_argument("--timeout-minutes", type=float, default=LOGIN_TIMEOUT_MINUTES)
         o = ap.parse_args(a[2:])
         r = qr_login(timeout_minutes=o.timeout_minutes)

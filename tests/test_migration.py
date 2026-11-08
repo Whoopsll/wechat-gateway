@@ -44,7 +44,7 @@ class MigrationTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.ClassDef))
         }
         migrated = {}
-        for path in (ROOT / "src/muse_wechat").glob("*.py"):
+        for path in (ROOT / "src/wechat_gateway").glob("*.py"):
             for node in ast.parse(path.read_text()).body:
                 if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name != "main":
                     self.assertNotIn(node.name, migrated, f"重复定义：{node.name}")

@@ -3,7 +3,7 @@ set -euo pipefail
 source "$HATCH_HOOK_RUNTIME"
 
 # 可由部署环境指定当前项目的兼容入口；默认保留原部署路径。
-WECHAT_GATEWAY_SCRIPT="${WECHAT_GATEWAY_SCRIPT:-$HOME/workspace/wechat-watch/muse_wechat.py}"
+WECHAT_GATEWAY_SCRIPT="${WECHAT_GATEWAY_SCRIPT:-$HOME/workspace/wechat-watch/wechat_gateway.py}"
 WECHAT_PYTHON="${WECHAT_PYTHON:-python3}"
 WECHAT_MAIL_ALLOWED="${WECHAT_MAIL_ALLOWED:-you@example.com}"
 
@@ -17,7 +17,7 @@ else
 下面的 GW 指 $WECHAT_PYTHON $WECHAT_GATEWAY_SCRIPT
 
 【铁律】违反任何一条都会造成重复发送，视为任务失败：
-- 不要读 muse_wechat.py 源码、不要读 ~/.openclaw 下的任何文件。
+- 不要读 wechat_gateway.py 源码、不要读 ~/.openclaw 下的任何文件。
   唯一例外：messages 里 [图片: 路径] / [文件 名字: 路径] 给出的路径，可以而且应该直接读取查看。
 - 发微信只能用 GW say / GW reply，禁止自己调用微信 API（curl、python 请求、拼 ilink 接口都不行）。
 - 发文件/图片到微信只能用 GW send_file，发邮件只能用 GW send_mail，禁止直接调用 hatch_gws_cli、Gmail 或微信上传接口。
