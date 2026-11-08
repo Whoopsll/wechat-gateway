@@ -44,41 +44,59 @@ class _CIHeaders(dict):
 
 def _parse_curl_headers(out):
     """解析 curl -i 的输出，返回 (status_code, _CIHeaders, body_bytes)。
-    走代理时会有多组响应头（如先 "HTTP/1.1 200 Connection Established" 再是真正的响应），
-    取最后一组以 HTTP/ 开头的头块为真正的响应头。"""
+    从头顺序消费代理 CONNECT 和 1xx 临时响应，读到最终响应后固定正文起点。
+    正文可能包含 HTTP 状态行甚至完整的伪响应头，不能再从正文中寻找头块。
+    当前调用方固定 HTTP/1.1、不跟随重定向；CONNECT 按常见的
+    "200 Connection established" 状态行识别。"""
+    import re
+
     marker = b"\nCURLSTATUS:"
     mi = out.rfind(marker)
     if mi < 0:
         raise ValueError("curl output missing CURLSTATUS trailer")
-    status = int(out[mi + len(marker):].decode("ascii").strip())
+    trailer = out[mi + len(marker):].strip()
+    if not re.fullmatch(rb"[1-5][0-9]{2}", trailer):
+        raise ValueError("invalid CURLSTATUS trailer")
+    status = int(trailer)
     raw = out[:mi]
-    # 找到最后一个以 HTTP/ 开头的头块
-    # 头块之间以 \r\n\r\n 分隔；body 也可能包含它，但 body 在最后一个头块之后
-    norm = raw.replace(b"\r\n", b"\n")
-    # 按 \n\n 切分，找最后一个以 HTTP/ 开头的块
-    parts = norm.split(b"\n\n")
-    hdr_idx = -1
-    for i, p in enumerate(parts):
-        if p.startswith(b"HTTP/"):
-            hdr_idx = i
-    if hdr_idx < 0:
-        raise ValueError("no HTTP status line in curl output")
-    # 在原始字节流里定位最后一个头块的结束位置（body 是二进制，不能做 \r\n 替换）
-    last_http = raw.rfind(b"HTTP/")
-    hdr_end = raw.find(b"\r\n\r\n", last_http)
-    sep_len = 4
-    if hdr_end < 0:
-        hdr_end = raw.find(b"\n\n", last_http)
-        sep_len = 2
-    if hdr_end < 0:
-        raise ValueError("no header/body separator in curl output")
-    header_block = raw[last_http:hdr_end].decode("latin-1").splitlines()
-    headers = _CIHeaders()
-    for line in header_block[1:]:
-        if ":" in line:
-            k, v = line.split(":", 1)
-            headers[k.strip()] = v.strip()
-    return status, headers, raw[hdr_end + sep_len:]
+    offset = 0
+
+    def read_line():
+        nonlocal offset
+        end = raw.find(b"\n", offset)
+        if end < 0:
+            raise ValueError("no header/body separator in curl output")
+        line = raw[offset:end].removesuffix(b"\r")
+        offset = end + 1
+        return line
+
+    while offset < len(raw):
+        match = re.fullmatch(
+            rb"HTTP/(?:1\.[01]|2|3) ([1-5][0-9]{2})(?: ([\t\x20-\x7e\x80-\xff]*))?",
+            read_line())
+        if match is None:
+            raise ValueError("invalid HTTP status line in curl output")
+        response_status = int(match[1])
+        reason = (match[2] or b"").strip().lower()
+        headers = _CIHeaders()
+        while True:
+            line = read_line()
+            if not line:
+                break
+            name, colon, value = line.partition(b":")
+            if (not colon or not re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                    or not re.fullmatch(rb"[\t\x20-\x7e\x80-\xff]*", value)):
+                raise ValueError("invalid HTTP header in curl output")
+            headers[name.decode("ascii")] = value.strip().decode("latin-1")
+        # 101 切换协议后也是正文；不能把新协议的数据继续当作 HTTP 头。
+        informational = 100 <= response_status < 200 and response_status != 101
+        connect = response_status == 200 and reason == b"connection established"
+        if informational or connect:
+            continue
+        if response_status != status:
+            raise ValueError("HTTP status does not match CURLSTATUS trailer")
+        return status, headers, raw[offset:]
+    raise ValueError("no final HTTP response in curl output")
 
 def _curl_request(method, url, headers=None, data=None, timeout=30):
     """用 curl 子进程发 HTTP 请求（urllib 会被代理按 TLS 指纹 403，curl 不会）。

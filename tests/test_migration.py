@@ -1,4 +1,4 @@
-"""验证从 HTML 到模块的业务定义迁移完整。"""
+"""验证原始定义完整；已单独修复的函数由对应回归测试覆盖。"""
 
 import ast
 from html.parser import HTMLParser
@@ -50,4 +50,9 @@ class MigrationTests(unittest.TestCase):
                     self.assertNotIn(node.name, migrated, f"重复定义：{node.name}")
                     migrated[node.name] = ast.dump(node)
         self.assertGreater(len(original), 80)
-        self.assertEqual(original, migrated)
+        self.assertEqual(original.keys(), migrated.keys())
+        # 解析器已修复正文 HTTP/ 误识别，不能再要求与含 bug 的快照完全相同。
+        # 其余定义仍逐一对比，避免顺带修改无关业务逻辑。
+        for name in original.keys() - {"_parse_curl_headers"}:
+            with self.subTest(name=name):
+                self.assertEqual(original[name], migrated[name])
